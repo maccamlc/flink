@@ -101,6 +101,8 @@ class FileCommitterTest {
                 .getRecoveredPendingFiles()
                 .forEach(pendingFile -> assertThat(pendingFile.isCommitted()).isTrue());
         assertThat(committables).allMatch(c -> c.getNumberOfRetries() == 0);
+
+        test listener invoked
     }
 
     // ------------------------------- Mock Classes --------------------------------
@@ -116,6 +118,9 @@ class FileCommitterTest {
         @Override
         public void commitAfterRecovery() throws IOException {
             committed = true;
+            committedPendingFileListeners.forEach(
+                    listener -> listener.onCommitted("mock-file")
+            );
         }
 
         public boolean isCommitted() {

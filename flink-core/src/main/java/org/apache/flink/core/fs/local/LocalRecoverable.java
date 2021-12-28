@@ -19,6 +19,7 @@
 package org.apache.flink.core.fs.local;
 
 import org.apache.flink.annotation.Internal;
+import org.apache.flink.core.fs.Path;
 import org.apache.flink.core.fs.RecoverableWriter.CommitRecoverable;
 import org.apache.flink.core.fs.RecoverableWriter.ResumeRecoverable;
 
@@ -41,6 +42,8 @@ class LocalRecoverable implements CommitRecoverable, ResumeRecoverable {
 
     /** The position to resume from. */
     private final long offset;
+
+    private transient Path targetPath;
 
     /**
      * Creates a resumable for the given file at the given position.
@@ -71,6 +74,13 @@ class LocalRecoverable implements CommitRecoverable, ResumeRecoverable {
     @Nonnull
     public String getCommitName() {
         return targetFile.getAbsolutePath();
+    }
+
+    public Path getPath() {
+        if (targetPath == null) {
+            targetPath = new Path(targetFile.getAbsolutePath());
+        }
+        return targetPath;
     }
 
     @Override

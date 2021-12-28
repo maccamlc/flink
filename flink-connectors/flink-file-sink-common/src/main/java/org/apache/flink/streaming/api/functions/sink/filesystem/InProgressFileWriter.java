@@ -22,6 +22,7 @@ import org.apache.flink.annotation.Internal;
 import org.apache.flink.core.fs.Path;
 
 import javax.annotation.Nullable;
+import javax.annotation.Nonnull;
 
 import java.io.IOException;
 
@@ -68,7 +69,10 @@ public interface InProgressFileWriter<IN, BucketID>
     /** The handle can be used to recover pending file. */
     interface PendingFileRecoverable {
 
-        /** @return The target path of the pending file, null if unavailable. */
+                /**
+         * Return representation of File System specific path to result file
+         * @return The result path
+         */
         @Nullable
         Path getPath();
 

@@ -18,6 +18,7 @@
 
 package org.apache.flink.connector.file.sink.utils;
 
+import org.apache.flink.core.fs.Path;
 import org.apache.flink.core.fs.RecoverableWriter;
 
 import javax.annotation.Nonnull;
@@ -31,9 +32,25 @@ import static org.apache.commons.lang3.StringUtils.EMPTY;
  * <p>This is to avoid to have to implement all methods for every implementation used in tests.
  */
 public class NoOpRecoverable implements RecoverableWriter.ResumeRecoverable {
+    private final Path testPath;
+
+    public NoOpRecoverable() {
+        this(new Path());
+    }
+
+    public NoOpRecoverable(Path testPath) {
+        this.testPath = testPath;
+    }
+
     @Override
     @Nonnull
     public String getCommitName() {
         return EMPTY;
+    }
+
+    @Override
+    @Nonnull
+    public Path getPath() {
+        return testPath;
     }
 }

@@ -43,6 +43,8 @@ class HadoopFsRecoverable implements CommitRecoverable, ResumeRecoverable {
     /** The position to resume from. */
     private final long offset;
 
+    private transient org.apache.flink.core.fs.Path targetPath;
+
     /**
      * Creates a resumable for the given file at the given position.
      *
@@ -66,6 +68,15 @@ class HadoopFsRecoverable implements CommitRecoverable, ResumeRecoverable {
 
     public long offset() {
         return offset;
+    }
+
+    @Override
+    @Nonnull
+    public org.apache.flink.core.fs.Path getPath() {
+        if (targetPath == null) {
+            targetPath = new org.apache.flink.core.fs.Path(targetFile.toUri());
+        }
+        return targetPath;
     }
 
     @Override

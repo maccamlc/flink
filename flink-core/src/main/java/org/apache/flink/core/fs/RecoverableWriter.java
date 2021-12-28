@@ -194,6 +194,12 @@ public interface RecoverableWriter {
          */
         @Nonnull
         String getCommitName();
+
+        /** Return representation of final File System specific path to result file
+         * @return The result path
+         */
+        @Nonnull
+        Path getPath();
     }
 
     /**

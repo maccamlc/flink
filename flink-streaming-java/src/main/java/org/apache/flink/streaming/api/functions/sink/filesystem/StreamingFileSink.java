@@ -43,6 +43,7 @@ import org.apache.flink.util.Preconditions;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Set;
 
 import static java.util.Optional.ofNullable;
@@ -239,7 +240,7 @@ public class StreamingFileSink<IN> extends RichSinkFunction<IN>
             this.bucketFactory = Preconditions.checkNotNull(bucketFactory);
             this.outputFileConfig = Preconditions.checkNotNull(outputFileConfig);
             this.committedPendingFileListeners = ofNullable(committedPendingFileListeners)
-                    .map(HashSet::new).orElseGet(HashSet::new);
+                    .map(LinkedHashSet::new).orElseGet(LinkedHashSet::new);
         }
 
         public long getBucketCheckInterval() {
@@ -399,7 +400,7 @@ public class StreamingFileSink<IN> extends RichSinkFunction<IN>
             this.bucketFactory = Preconditions.checkNotNull(bucketFactory);
             this.outputFileConfig = Preconditions.checkNotNull(outputFileConfig);
             this.committedPendingFileListeners = ofNullable(committedPendingFileListeners)
-                    .map(HashSet::new).orElseGet(HashSet::new);
+                    .map(LinkedHashSet::new).orElseGet(LinkedHashSet::new);
         }
 
         public long getBucketCheckInterval() {

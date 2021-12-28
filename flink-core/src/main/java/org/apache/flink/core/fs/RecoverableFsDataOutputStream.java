@@ -73,7 +73,7 @@ public abstract class RecoverableFsDataOutputStream extends FSDataOutputStream {
          *
          * @throws IOException Thrown if committing fails.
          */
-        void commit() throws IOException;
+        void commit(Listener l) throws IOException;
 
         /**
          * Commits the file, making it visible. The file will contain the exact data as when the

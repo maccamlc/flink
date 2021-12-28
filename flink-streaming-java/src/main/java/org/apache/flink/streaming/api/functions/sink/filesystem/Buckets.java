@@ -39,6 +39,7 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -119,7 +120,7 @@ public class Buckets<IN, BucketID> {
 
         this.outputFileConfig = Preconditions.checkNotNull(outputFileConfig);
 
-        this.committedPendingFileListeners = new HashSet<>(Preconditions.checkContainsNotNull(committedPendingFileListeners));
+        this.committedPendingFileListeners = new LinkedHashSet<>(Preconditions.checkContainsNotNull(committedPendingFileListeners));
 
         this.activeBuckets = new HashMap<>();
         this.bucketerContext = new Buckets.BucketerContext();
