@@ -20,8 +20,10 @@ package org.apache.flink.streaming.api.functions.sink.filesystem;
 
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.core.fs.Path;
+import org.apache.flink.streaming.api.functions.sink.filesystem.listeners.CommittedPendingFileListener;
 
 import java.io.IOException;
+import java.util.Set;
 
 /** An interface for factories that create the different {@link InProgressFileWriter writers}. */
 @Internal
@@ -120,7 +122,7 @@ public interface BucketWriter<IN, BucketID> {
          *
          * @throws IOException Thrown if committing fails.
          */
-        void commit() throws IOException;
+        void commit(Set<CommittedPendingFileListener> committedPendingFileListeners) throws IOException;
 
         /**
          * Commits the pending file, making it visible. The file will contain the exact data as when
@@ -132,6 +134,6 @@ public interface BucketWriter<IN, BucketID> {
          *
          * @throws IOException Thrown if committing fails.
          */
-        void commitAfterRecovery() throws IOException;
+        void commitAfterRecovery(Set<CommittedPendingFileListener> committedPendingFileListeners) throws IOException;
     }
 }

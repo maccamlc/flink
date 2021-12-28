@@ -28,10 +28,12 @@ import org.apache.flink.core.fs.FileSystem;
 import org.apache.flink.core.fs.Path;
 import org.apache.flink.runtime.state.FunctionInitializationContext;
 import org.apache.flink.runtime.state.FunctionSnapshotContext;
+
 import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction;
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
 import org.apache.flink.streaming.api.functions.sink.SinkFunction;
 import org.apache.flink.streaming.api.functions.sink.filesystem.bucketassigners.DateTimeBucketAssigner;
+import org.apache.flink.streaming.api.functions.sink.filesystem.listeners.CommittedPendingFileListener;
 import org.apache.flink.streaming.api.functions.sink.filesystem.rollingpolicies.CheckpointRollingPolicy;
 import org.apache.flink.streaming.api.functions.sink.filesystem.rollingpolicies.DefaultRollingPolicy;
 import org.apache.flink.streaming.api.functions.sink.filesystem.rollingpolicies.OnCheckpointRollingPolicy;
@@ -40,6 +42,11 @@ import org.apache.flink.util.Preconditions;
 
 import java.io.IOException;
 import java.io.Serializable;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.Set;
+
+import static java.util.Optional.ofNullable;
 
 /**
  * Sink that emits its input elements to {@link FileSystem} files within buckets. This is integrated
@@ -199,6 +206,8 @@ public class StreamingFileSink<IN> extends RichSinkFunction<IN>
 
         private OutputFileConfig outputFileConfig;
 
+        private final Set<CommittedPendingFileListener> committedPendingFileListeners;
+
         protected RowFormatBuilder(
                 Path basePath, Encoder<IN> encoder, BucketAssigner<IN, BucketID> bucketAssigner) {
             this(
@@ -208,7 +217,8 @@ public class StreamingFileSink<IN> extends RichSinkFunction<IN>
                     DefaultRollingPolicy.builder().build(),
                     DEFAULT_BUCKET_CHECK_INTERVAL,
                     new DefaultBucketFactoryImpl<>(),
-                    OutputFileConfig.builder().build());
+                    OutputFileConfig.builder().build(),
+                    null);
         }
 
         protected RowFormatBuilder(
@@ -218,7 +228,8 @@ public class StreamingFileSink<IN> extends RichSinkFunction<IN>
                 RollingPolicy<IN, BucketID> policy,
                 long bucketCheckInterval,
                 BucketFactory<IN, BucketID> bucketFactory,
-                OutputFileConfig outputFileConfig) {
+                OutputFileConfig outputFileConfig,
+                Set<CommittedPendingFileListener> committedPendingFileListeners) {
             this.basePath = Preconditions.checkNotNull(basePath);
             this.encoder = Preconditions.checkNotNull(encoder);
             this.bucketAssigner = Preconditions.checkNotNull(assigner);
@@ -226,6 +237,8 @@ public class StreamingFileSink<IN> extends RichSinkFunction<IN>
             this.bucketCheckInterval = bucketCheckInterval;
             this.bucketFactory = Preconditions.checkNotNull(bucketFactory);
             this.outputFileConfig = Preconditions.checkNotNull(outputFileConfig);
+            this.committedPendingFileListeners = ofNullable(committedPendingFileListeners)
+                    .map(LinkedHashSet::new).orElseGet(LinkedHashSet::new);
         }
 
         public long getBucketCheckInterval() {
@@ -248,7 +261,17 @@ public class StreamingFileSink<IN> extends RichSinkFunction<IN>
         }
 
         public T withOutputFileConfig(final OutputFileConfig outputFileConfig) {
-            this.outputFileConfig = outputFileConfig;
+            this.outputFileConfig = Preconditions.checkNotNull(outputFileConfig);
+            return self();
+        }
+
+        public T withCommittedPendingFileListener(final CommittedPendingFileListener committedPendingFileListener) {
+            this.committedPendingFileListeners.add(Preconditions.checkNotNull(committedPendingFileListener));
+            return self();
+        }
+
+        public T withCommittedPendingFileListeners(final Set<CommittedPendingFileListener> committedPendingFileListeners) {
+            this.committedPendingFileListeners.addAll(Preconditions.checkContainsNotNull(committedPendingFileListeners));
             return self();
         }
 
@@ -267,7 +290,8 @@ public class StreamingFileSink<IN> extends RichSinkFunction<IN>
                     Preconditions.checkNotNull(policy),
                     bucketCheckInterval,
                     new DefaultBucketFactoryImpl<>(),
-                    outputFileConfig);
+                    outputFileConfig,
+                    committedPendingFileListeners);
         }
 
         /** Creates the actual sink. */
@@ -298,7 +322,8 @@ public class StreamingFileSink<IN> extends RichSinkFunction<IN>
                     createBucketWriter(),
                     rollingPolicy,
                     subtaskIndex,
-                    outputFileConfig);
+                    outputFileConfig,
+                    ofNullable(committedPendingFileListeners).orElseGet(HashSet::new));
         }
     }
 
@@ -339,6 +364,8 @@ public class StreamingFileSink<IN> extends RichSinkFunction<IN>
 
         private OutputFileConfig outputFileConfig;
 
+        private final Set<CommittedPendingFileListener> committedPendingFileListeners;
+
         protected BulkFormatBuilder(
                 Path basePath,
                 BulkWriter.Factory<IN> writerFactory,
@@ -350,7 +377,8 @@ public class StreamingFileSink<IN> extends RichSinkFunction<IN>
                     OnCheckpointRollingPolicy.build(),
                     DEFAULT_BUCKET_CHECK_INTERVAL,
                     new DefaultBucketFactoryImpl<>(),
-                    OutputFileConfig.builder().build());
+                    OutputFileConfig.builder().build(),
+                    null);
         }
 
         protected BulkFormatBuilder(
@@ -360,7 +388,8 @@ public class StreamingFileSink<IN> extends RichSinkFunction<IN>
                 CheckpointRollingPolicy<IN, BucketID> policy,
                 long bucketCheckInterval,
                 BucketFactory<IN, BucketID> bucketFactory,
-                OutputFileConfig outputFileConfig) {
+                OutputFileConfig outputFileConfig,
+                Set<CommittedPendingFileListener> committedPendingFileListeners) {
             this.basePath = Preconditions.checkNotNull(basePath);
             this.writerFactory = writerFactory;
             this.bucketAssigner = Preconditions.checkNotNull(assigner);
@@ -368,6 +397,8 @@ public class StreamingFileSink<IN> extends RichSinkFunction<IN>
             this.bucketCheckInterval = bucketCheckInterval;
             this.bucketFactory = Preconditions.checkNotNull(bucketFactory);
             this.outputFileConfig = Preconditions.checkNotNull(outputFileConfig);
+            this.committedPendingFileListeners = ofNullable(committedPendingFileListeners)
+                    .map(LinkedHashSet::new).orElseGet(LinkedHashSet::new);
         }
 
         public long getBucketCheckInterval() {
@@ -396,7 +427,17 @@ public class StreamingFileSink<IN> extends RichSinkFunction<IN>
         }
 
         public T withOutputFileConfig(final OutputFileConfig outputFileConfig) {
-            this.outputFileConfig = outputFileConfig;
+            this.outputFileConfig = Preconditions.checkNotNull(outputFileConfig);
+            return self();
+        }
+
+        public T withCommittedPendingFileListener(final CommittedPendingFileListener committedPendingFileListener) {
+            this.committedPendingFileListeners.add(Preconditions.checkNotNull(committedPendingFileListener));
+            return self();
+        }
+
+        public T withCommittedPendingFileListeners(final Set<CommittedPendingFileListener> committedPendingFileListeners) {
+            this.committedPendingFileListeners.addAll(Preconditions.checkContainsNotNull(committedPendingFileListeners));
             return self();
         }
 
@@ -413,7 +454,8 @@ public class StreamingFileSink<IN> extends RichSinkFunction<IN>
                     rollingPolicy,
                     bucketCheckInterval,
                     new DefaultBucketFactoryImpl<>(),
-                    outputFileConfig);
+                    outputFileConfig,
+                    committedPendingFileListeners);
         }
 
         /** Creates the actual sink. */
@@ -438,7 +480,8 @@ public class StreamingFileSink<IN> extends RichSinkFunction<IN>
                     createBucketWriter(),
                     rollingPolicy,
                     subtaskIndex,
-                    outputFileConfig);
+                    outputFileConfig,
+                    ofNullable(committedPendingFileListeners).orElseGet(HashSet::new));
         }
     }
 

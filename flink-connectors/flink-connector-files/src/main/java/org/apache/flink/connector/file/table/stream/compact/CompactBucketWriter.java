@@ -21,9 +21,12 @@ package org.apache.flink.connector.file.table.stream.compact;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.streaming.api.functions.sink.filesystem.BucketWriter;
 import org.apache.flink.streaming.api.functions.sink.filesystem.InProgressFileWriter;
+import org.apache.flink.streaming.api.functions.sink.filesystem.listeners.CommittedPendingFileListener;
 import org.apache.flink.util.function.SupplierWithException;
 
 import java.io.IOException;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /** The {@link CompactWriter} to delegate {@link BucketWriter}. */
 @Internal
@@ -31,11 +34,15 @@ public class CompactBucketWriter<T> implements CompactWriter<T> {
 
     private final BucketWriter<T, String> bucketWriter;
     private final InProgressFileWriter<T, String> writer;
+    private final Set<CommittedPendingFileListener> committedPendingFileListeners;
 
     private CompactBucketWriter(
-            BucketWriter<T, String> bucketWriter, InProgressFileWriter<T, String> writer) {
+            BucketWriter<T, String> bucketWriter,
+            InProgressFileWriter<T, String> writer,
+            Set<CommittedPendingFileListener> committedPendingFileListeners) {
         this.bucketWriter = bucketWriter;
         this.writer = writer;
+        this.committedPendingFileListeners = new LinkedHashSet<>(committedPendingFileListeners);
     }
 
     @Override
@@ -46,12 +53,13 @@ public class CompactBucketWriter<T> implements CompactWriter<T> {
 
     @Override
     public void commit() throws IOException {
-        bucketWriter.recoverPendingFile(writer.closeForCommit()).commit();
+        bucketWriter.recoverPendingFile(writer.closeForCommit()).commit(committedPendingFileListeners);
     }
 
     public static <T> CompactWriter.Factory<T> factory(
-            SupplierWithException<BucketWriter<T, String>, IOException> factory) {
-        return new Factory<>(factory);
+            SupplierWithException<BucketWriter<T, String>, IOException> factory,
+            Set<CommittedPendingFileListener> committedPendingFileListeners) {
+        return new Factory<>(factory, committedPendingFileListeners);
     }
 
     /** Factory to create {@link CompactBucketWriter}. */
@@ -60,9 +68,13 @@ public class CompactBucketWriter<T> implements CompactWriter<T> {
         private final SupplierWithException<BucketWriter<T, String>, IOException> factory;
 
         private BucketWriter<T, String> bucketWriter;
+        private Set<CommittedPendingFileListener> committedPendingFileListeners;
 
-        public Factory(SupplierWithException<BucketWriter<T, String>, IOException> factory) {
+        public Factory(
+                SupplierWithException<BucketWriter<T, String>, IOException> factory,
+                Set<CommittedPendingFileListener> committedPendingFileListeners) {
             this.factory = factory;
+            this.committedPendingFileListeners = new LinkedHashSet<>(committedPendingFileListeners);
         }
 
         @Override
@@ -76,7 +88,8 @@ public class CompactBucketWriter<T> implements CompactWriter<T> {
             return new CompactBucketWriter<>(
                     bucketWriter,
                     bucketWriter.openNewInProgressFile(
-                            context.getPartition(), context.getPath(), 0));
+                            context.getPartition(), context.getPath(), 0),
+                    committedPendingFileListeners);
         }
     }
 }

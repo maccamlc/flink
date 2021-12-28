@@ -22,6 +22,10 @@ import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.core.fs.Path;
 
+import org.apache.flink.shaded.guava30.com.google.common.collect.ImmutableSet;
+
+import org.apache.flink.streaming.api.functions.sink.filesystem.listeners.CommittedPendingFileListener;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,13 +33,17 @@ import javax.annotation.Nullable;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Objects;
+import java.util.Set;
 import java.util.TreeMap;
 
+import static org.apache.flink.util.Preconditions.checkContainsNotNull;
 import static org.apache.flink.util.Preconditions.checkNotNull;
 import static org.apache.flink.util.Preconditions.checkState;
 
@@ -77,6 +85,8 @@ public class Bucket<IN, BucketID> {
     private List<InProgressFileWriter.PendingFileRecoverable>
             pendingFileRecoverablesForCurrentCheckpoint;
 
+    private final Set<CommittedPendingFileListener> committedPendingFileListeners;
+
     /** Constructor to create a new empty bucket. */
     private Bucket(
             final int subtaskIndex,
@@ -86,7 +96,8 @@ public class Bucket<IN, BucketID> {
             final BucketWriter<IN, BucketID> bucketWriter,
             final RollingPolicy<IN, BucketID> rollingPolicy,
             @Nullable final FileLifeCycleListener<BucketID> fileListener,
-            final OutputFileConfig outputFileConfig) {
+            final OutputFileConfig outputFileConfig,
+            final Set<CommittedPendingFileListener> committedPendingFileListeners) {
         this.subtaskIndex = subtaskIndex;
         this.bucketId = checkNotNull(bucketId);
         this.bucketPath = checkNotNull(bucketPath);
@@ -100,6 +111,8 @@ public class Bucket<IN, BucketID> {
         this.inProgressFileRecoverablesPerCheckpoint = new TreeMap<>();
 
         this.outputFileConfig = checkNotNull(outputFileConfig);
+
+        this.committedPendingFileListeners = new LinkedHashSet<>(checkContainsNotNull(committedPendingFileListeners));
     }
 
     /** Constructor to restore a bucket from checkpointed state. */
@@ -110,7 +123,8 @@ public class Bucket<IN, BucketID> {
             final RollingPolicy<IN, BucketID> rollingPolicy,
             final BucketState<BucketID> bucketState,
             @Nullable final FileLifeCycleListener<BucketID> fileListener,
-            final OutputFileConfig outputFileConfig)
+            final OutputFileConfig outputFileConfig,
+            final Set<CommittedPendingFileListener> committedPendingFileListeners)
             throws IOException {
 
         this(
@@ -121,7 +135,8 @@ public class Bucket<IN, BucketID> {
                 partFileFactory,
                 rollingPolicy,
                 fileListener,
-                outputFileConfig);
+                outputFileConfig,
+                committedPendingFileListeners);
 
         restoreInProgressFile(bucketState);
         commitRecoveredPendingFiles(bucketState);
@@ -146,7 +161,8 @@ public class Bucket<IN, BucketID> {
         } else {
             // if the writer does not support resume, then we close the
             // in-progress part and commit it, as done in the case of pending files.
-            bucketWriter.recoverPendingFile(inProgressFileRecoverable).commitAfterRecovery();
+            bucketWriter.recoverPendingFile(inProgressFileRecoverable)
+                    .commitAfterRecovery(committedPendingFileListeners);
         }
     }
 
@@ -158,7 +174,8 @@ public class Bucket<IN, BucketID> {
                 state.getPendingFileRecoverablesPerCheckpoint().values()) {
             for (InProgressFileWriter.PendingFileRecoverable pendingFileRecoverable :
                     pendingFileRecoverables) {
-                bucketWriter.recoverPendingFile(pendingFileRecoverable).commitAfterRecovery();
+                bucketWriter.recoverPendingFile(pendingFileRecoverable)
+                        .commitAfterRecovery(committedPendingFileListeners);
             }
         }
     }
@@ -326,7 +343,12 @@ public class Bucket<IN, BucketID> {
 
             for (InProgressFileWriter.PendingFileRecoverable pendingFileRecoverable :
                     entry.getValue()) {
-                bucketWriter.recoverPendingFile(pendingFileRecoverable).commit();
+                bucketWriter.recoverPendingFile(pendingFileRecoverable)
+                        .commit(committedPendingFileListeners);ff
+
+                        if (fileListener != null) {
+                            fileListener.onPartFileCommitted(bucketId, pendingFileRecoverable.getPath());
+                        }
             }
             it.remove();
         }
@@ -427,7 +449,8 @@ public class Bucket<IN, BucketID> {
             final BucketWriter<IN, BucketID> bucketWriter,
             final RollingPolicy<IN, BucketID> rollingPolicy,
             @Nullable final FileLifeCycleListener<BucketID> fileListener,
-            final OutputFileConfig outputFileConfig) {
+            final OutputFileConfig outputFileConfig,
+            final Set<CommittedPendingFileListener> committedPendingFileListeners) {
         return new Bucket<>(
                 subtaskIndex,
                 bucketId,
@@ -436,7 +459,8 @@ public class Bucket<IN, BucketID> {
                 bucketWriter,
                 rollingPolicy,
                 fileListener,
-                outputFileConfig);
+                outputFileConfig,
+                committedPendingFileListeners);
     }
 
     /**
@@ -462,7 +486,8 @@ public class Bucket<IN, BucketID> {
             final RollingPolicy<IN, BucketID> rollingPolicy,
             final BucketState<BucketID> bucketState,
             @Nullable final FileLifeCycleListener<BucketID> fileListener,
-            final OutputFileConfig outputFileConfig)
+            final OutputFileConfig outputFileConfig,
+            final Set<CommittedPendingFileListener> committedPendingFileListeners)
             throws IOException {
         return new Bucket<>(
                 subtaskIndex,
@@ -471,6 +496,7 @@ public class Bucket<IN, BucketID> {
                 rollingPolicy,
                 bucketState,
                 fileListener,
-                outputFileConfig);
+                outputFileConfig,
+                committedPendingFileListeners);
     }
 }

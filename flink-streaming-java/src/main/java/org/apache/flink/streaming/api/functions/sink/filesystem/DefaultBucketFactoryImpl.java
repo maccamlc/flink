@@ -20,10 +20,12 @@ package org.apache.flink.streaming.api.functions.sink.filesystem;
 
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.core.fs.Path;
+import org.apache.flink.streaming.api.functions.sink.filesystem.listeners.CommittedPendingFileListener;
 
 import javax.annotation.Nullable;
 
 import java.io.IOException;
+import java.util.Set;
 
 /** A factory returning {@link Bucket buckets}. */
 @Internal
@@ -40,7 +42,8 @@ public class DefaultBucketFactoryImpl<IN, BucketID> implements BucketFactory<IN,
             final BucketWriter<IN, BucketID> bucketWriter,
             final RollingPolicy<IN, BucketID> rollingPolicy,
             @Nullable final FileLifeCycleListener<BucketID> fileListener,
-            final OutputFileConfig outputFileConfig) {
+            final OutputFileConfig outputFileConfig,
+            final Set<CommittedPendingFileListener> committedPendingFileListeners) {
 
         return Bucket.getNew(
                 subtaskIndex,
@@ -50,7 +53,8 @@ public class DefaultBucketFactoryImpl<IN, BucketID> implements BucketFactory<IN,
                 bucketWriter,
                 rollingPolicy,
                 fileListener,
-                outputFileConfig);
+                outputFileConfig,
+                committedPendingFileListeners);
     }
 
     @Override
@@ -61,7 +65,8 @@ public class DefaultBucketFactoryImpl<IN, BucketID> implements BucketFactory<IN,
             final RollingPolicy<IN, BucketID> rollingPolicy,
             final BucketState<BucketID> bucketState,
             @Nullable final FileLifeCycleListener<BucketID> fileListener,
-            final OutputFileConfig outputFileConfig)
+            final OutputFileConfig outputFileConfig,
+            final Set<CommittedPendingFileListener> committedPendingFileListeners)
             throws IOException {
 
         return Bucket.restore(
@@ -71,6 +76,7 @@ public class DefaultBucketFactoryImpl<IN, BucketID> implements BucketFactory<IN,
                 rollingPolicy,
                 bucketState,
                 fileListener,
-                outputFileConfig);
+                outputFileConfig,
+                committedPendingFileListeners);
     }
 }

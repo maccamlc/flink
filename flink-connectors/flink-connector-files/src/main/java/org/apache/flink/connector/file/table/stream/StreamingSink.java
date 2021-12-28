@@ -40,6 +40,7 @@ import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.functions.sink.DiscardingSink;
 import org.apache.flink.streaming.api.functions.sink.filesystem.BucketWriter;
 import org.apache.flink.streaming.api.functions.sink.filesystem.StreamingFileSink;
+import org.apache.flink.streaming.api.functions.sink.filesystem.listeners.CommittedPendingFileListener;
 import org.apache.flink.table.catalog.ObjectIdentifier;
 import org.apache.flink.table.connector.ProviderContext;
 import org.apache.flink.util.function.SupplierWithException;
@@ -47,6 +48,7 @@ import org.apache.flink.util.function.SupplierWithException;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.List;
+import java.util.Set;
 
 import static org.apache.flink.connector.file.table.FileSystemConnectorOptions.SINK_PARTITION_COMMIT_POLICY_KIND;
 
@@ -95,7 +97,8 @@ public class StreamingSink {
             Path path,
             CompactReader.Factory<T> readFactory,
             long targetFileSize,
-            int parallelism) {
+            int parallelism,
+            Set<CommittedPendingFileListener> committedPendingFileListeners) {
         CompactFileWriter<T> writer = new CompactFileWriter<>(bucketCheckInterval, bucketsBuilder);
 
         SupplierWithException<FileSystem, IOException> fsSupplier =
@@ -123,7 +126,8 @@ public class StreamingSink {
         CompactWriter.Factory<T> writerFactory =
                 CompactBucketWriter.factory(
                         (SupplierWithException<BucketWriter<T, String>, IOException> & Serializable)
-                                bucketsBuilder::createBucketWriter);
+                                bucketsBuilder::createBucketWriter,
+                        committedPendingFileListeners);
 
         CompactOperator<T> compacter =
                 new CompactOperator<>(fsSupplier, readFactory, writerFactory);

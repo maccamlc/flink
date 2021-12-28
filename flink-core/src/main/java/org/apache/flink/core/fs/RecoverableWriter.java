@@ -21,6 +21,8 @@ package org.apache.flink.core.fs;
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.core.io.SimpleVersionedSerializer;
 
+import javax.annotation.Nonnull;
+
 import java.io.IOException;
 
 /**
@@ -185,7 +187,14 @@ public interface RecoverableWriter {
      * A handle to an in-progress stream with a defined and persistent amount of data. The handle
      * can be used to recover the stream as of exactly that point and publish the result file.
      */
-    interface CommitRecoverable {}
+    interface CommitRecoverable {
+        /**
+         * Return representation of final File System specific path to result file
+         * @return The result path
+         */
+        @Nonnull
+        Path getPath();
+    }
 
     /**
      * A handle to an in-progress stream with a defined and persistent amount of data. The handle

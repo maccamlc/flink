@@ -22,6 +22,8 @@ import org.apache.flink.annotation.Internal;
 
 import com.amazonaws.services.s3.model.PartETag;
 
+import org.apache.flink.core.fs.Path;
+
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;

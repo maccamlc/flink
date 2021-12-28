@@ -21,6 +21,7 @@ package org.apache.flink.fs.s3.common.writer;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.core.fs.RefCountedFSOutputStream;
+import org.apache.flink.core.fs.Path;
 
 import com.amazonaws.services.s3.model.PartETag;
 import com.amazonaws.services.s3.model.UploadPartResult;

@@ -62,7 +62,7 @@ public final class S3Committer implements RecoverableFsDataOutputStream.Committe
     }
 
     @Override
-    public void commit() throws IOException {
+    public void commit(Listener) throws IOException {
         if (totalLength > 0L) {
             LOG.info("Committing {} with MPU ID {}", objectName, uploadId);
 

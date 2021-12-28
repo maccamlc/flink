@@ -26,6 +26,7 @@ import org.apache.flink.core.fs.RecoverableFsDataOutputStream;
 import org.apache.flink.core.fs.RecoverableWriter;
 import org.apache.flink.core.fs.local.LocalFileSystem;
 import org.apache.flink.core.fs.local.LocalRecoverableWriter;
+import org.apache.flink.streaming.api.functions.sink.filesystem.listeners.CommittedPendingFileListener;
 import org.apache.flink.streaming.api.functions.sink.filesystem.rollingpolicies.DefaultRollingPolicy;
 import org.apache.flink.streaming.api.functions.sink.filesystem.utils.NoOpCommitter;
 import org.apache.flink.streaming.api.functions.sink.filesystem.utils.NoOpRecoverable;
@@ -42,9 +43,11 @@ import org.junit.rules.TemporaryFolder;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.apache.flink.util.Preconditions.checkArgument;
 import static org.junit.Assert.assertThat;
@@ -400,7 +403,8 @@ public class BucketTest {
             final Path bucketPath,
             final int subtaskIdx,
             final int initialPartCounter,
-            final OutputFileConfig outputFileConfig)
+            final OutputFileConfig outputFileConfig,
+            final Set<CommittedPendingFileListener> committedPendingFileListeners)
             throws IOException {
 
         return Bucket.getNew(
@@ -411,7 +415,8 @@ public class BucketTest {
                 new RowWiseBucketWriter<>(writer, ENCODER),
                 rollingPolicy,
                 null,
-                outputFileConfig);
+                outputFileConfig,
+                committedPendingFileListeners);
     }
 
     private static Bucket<String, String> restoreBucket(
@@ -419,7 +424,8 @@ public class BucketTest {
             final int subtaskIndex,
             final long initialPartCounter,
             final BucketState<String> bucketState,
-            final OutputFileConfig outputFileConfig)
+            final OutputFileConfig outputFileConfig,
+            final Set<CommittedPendingFileListener> committedPendingFileListeners)
             throws Exception {
 
         return Bucket.restore(
@@ -429,7 +435,8 @@ public class BucketTest {
                 rollingPolicy,
                 bucketState,
                 null,
-                outputFileConfig);
+                outputFileConfig,
+                committedPendingFileListeners);
     }
 
     private static TestRecoverableWriter getRecoverableWriter(Path path) {
@@ -467,7 +474,8 @@ public class BucketTest {
                 rollingPolicy,
                 stateWithOnlyInProgressFile,
                 null,
-                OutputFileConfig.builder().build());
+                OutputFileConfig.builder().build(),
+                Collections.emptySet());
     }
 
     private Bucket<String, String> getRestoredBucketWithOnlyPendingParts(
@@ -484,7 +492,8 @@ public class BucketTest {
                 rollingPolicy,
                 initStateWithOnlyInProgressFile,
                 null,
-                OutputFileConfig.builder().build());
+                OutputFileConfig.builder().build(),
+                Collections.emptySet());
     }
 
     private Map<Long, List<InProgressFileWriter.PendingFileRecoverable>>

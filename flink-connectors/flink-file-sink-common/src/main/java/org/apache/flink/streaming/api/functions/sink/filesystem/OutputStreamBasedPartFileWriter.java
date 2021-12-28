@@ -27,13 +27,16 @@ import org.apache.flink.core.memory.DataInputDeserializer;
 import org.apache.flink.core.memory.DataInputView;
 import org.apache.flink.core.memory.DataOutputSerializer;
 import org.apache.flink.core.memory.DataOutputView;
+import org.apache.flink.streaming.api.functions.sink.filesystem.listeners.CommittedPendingFileListener;
 import org.apache.flink.util.IOUtils;
 
 import javax.annotation.Nullable;
+import javax.annotation.Nonnull;
 
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * The base class for all the part file writer that use {@link
@@ -239,6 +242,7 @@ public abstract class OutputStreamBasedPartFileWriter<IN, BucketID>
         }
 
         @Override
+        @Nonnull
         public Path getPath() {
             return targetPath;
         }
@@ -341,13 +345,22 @@ public abstract class OutputStreamBasedPartFileWriter<IN, BucketID>
         }
 
         @Override
-        public void commit() throws IOException {
+        public void commit(Set<CommittedPendingFileListener> committedPendingFileListeners) throws IOException {
             committer.commit();
+            invokeListeners(committedPendingFileListeners);
         }
 
         @Override
-        public void commitAfterRecovery() throws IOException {
+        public void commitAfterRecovery(Set<CommittedPendingFileListener> committedPendingFileListeners) throws IOException {
             committer.commitAfterRecovery();
+            invokeListeners(committedPendingFileListeners);
+        }
+
+        private void invokeListeners(Set<CommittedPendingFileListener> committedPendingFileListeners) {
+            final String commitName = committer.getRecoverable().getCommitName();
+            committedPendingFileListeners.forEach(
+                    listener -> listener.onCommitted(commitName)
+            );
         }
     }
 

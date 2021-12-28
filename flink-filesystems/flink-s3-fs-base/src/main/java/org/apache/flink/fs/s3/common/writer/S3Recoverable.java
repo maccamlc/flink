@@ -18,10 +18,12 @@
 
 package org.apache.flink.fs.s3.common.writer;
 
+import org.apache.flink.core.fs.Path;
 import org.apache.flink.core.fs.RecoverableWriter;
 
 import com.amazonaws.services.s3.model.PartETag;
 
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import java.util.List;
@@ -37,6 +39,8 @@ public final class S3Recoverable implements RecoverableWriter.ResumeRecoverable 
     private final String objectName;
 
     private final List<PartETag> parts;
+
+    private transient Path path;
 
     @Nullable private final String lastPartObject;
 
@@ -92,6 +96,15 @@ public final class S3Recoverable implements RecoverableWriter.ResumeRecoverable 
 
     public long incompleteObjectLength() {
         return lastPartObjectLength;
+    }
+
+    @Nonnull
+    @Override
+    public Path getPath() {
+        if (path == null) {
+            path = new Path(objectName);
+        }
+        return path;
     }
 
     // ------------------------------------------------------------------------

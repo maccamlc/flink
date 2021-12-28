@@ -23,7 +23,11 @@ import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.common.state.ListState;
 import org.apache.flink.core.fs.Path;
 import org.apache.flink.core.io.SimpleVersionedSerialization;
+
+import org.apache.flink.shaded.guava30.com.google.common.collect.ImmutableSet;
+
 import org.apache.flink.streaming.api.functions.sink.SinkFunction;
+import org.apache.flink.streaming.api.functions.sink.filesystem.listeners.CommittedPendingFileListener;
 import org.apache.flink.util.Preconditions;
 
 import org.slf4j.Logger;
@@ -33,8 +37,10 @@ import javax.annotation.Nullable;
 
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * The manager of the different active buckets in the {@link StreamingFileSink}.
@@ -79,6 +85,8 @@ public class Buckets<IN, BucketID> {
 
     @Nullable private FileLifeCycleListener<BucketID> fileLifeCycleListener;
 
+    private final Set<CommittedPendingFileListener> committedPendingFileListeners;
+
     // --------------------------- State Related Fields -----------------------------
 
     private final BucketStateSerializer<BucketID> bucketStateSerializer;
@@ -99,7 +107,8 @@ public class Buckets<IN, BucketID> {
             final BucketWriter<IN, BucketID> bucketWriter,
             final RollingPolicy<IN, BucketID> rollingPolicy,
             final int subtaskIndex,
-            final OutputFileConfig outputFileConfig) {
+            final OutputFileConfig outputFileConfig,
+            final Set<CommittedPendingFileListener> committedPendingFileListeners) {
 
         this.basePath = Preconditions.checkNotNull(basePath);
         this.bucketAssigner = Preconditions.checkNotNull(bucketAssigner);
@@ -109,6 +118,8 @@ public class Buckets<IN, BucketID> {
         this.subtaskIndex = subtaskIndex;
 
         this.outputFileConfig = Preconditions.checkNotNull(outputFileConfig);
+
+        this.committedPendingFileListeners = new LinkedHashSet<>(Preconditions.checkContainsNotNull(committedPendingFileListeners));
 
         this.activeBuckets = new HashMap<>();
         this.bucketerContext = new Buckets.BucketerContext();
@@ -196,7 +207,8 @@ public class Buckets<IN, BucketID> {
                         rollingPolicy,
                         recoveredState,
                         fileLifeCycleListener,
-                        outputFileConfig);
+                        outputFileConfig,
+                        committedPendingFileListeners);
 
         updateActiveBucketId(bucketId, restoredBucket);
     }
@@ -326,7 +338,8 @@ public class Buckets<IN, BucketID> {
                             bucketWriter,
                             rollingPolicy,
                             fileLifeCycleListener,
-                            outputFileConfig);
+                            outputFileConfig,
+                            committedPendingFileListeners);
             activeBuckets.put(bucketId, bucket);
             notifyBucketCreate(bucket);
         }

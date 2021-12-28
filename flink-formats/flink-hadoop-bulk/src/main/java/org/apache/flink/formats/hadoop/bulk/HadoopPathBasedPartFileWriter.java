@@ -24,15 +24,19 @@ import org.apache.flink.streaming.api.functions.sink.filesystem.AbstractPartFile
 import org.apache.flink.streaming.api.functions.sink.filesystem.BucketWriter;
 import org.apache.flink.streaming.api.functions.sink.filesystem.InProgressFileWriter;
 import org.apache.flink.streaming.api.functions.sink.filesystem.WriterProperties;
+import org.apache.flink.streaming.api.functions.sink.filesystem.listeners.CommittedPendingFileListener;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
+
+import javax.annotation.Nonnull;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.Set;
 
 /** The part-file writer that writes to the specified hadoop path. */
 public class HadoopPathBasedPartFileWriter<IN, BucketID>
@@ -94,18 +98,27 @@ public class HadoopPathBasedPartFileWriter<IN, BucketID>
         }
 
         @Override
-        public void commit() throws IOException {
+        public void commit(Set<CommittedPendingFileListener> committedPendingFileListeners) throws IOException {
             fileCommitter.commit();
+            invokeListeners(committedPendingFileListeners);
         }
 
         @Override
-        public void commitAfterRecovery() throws IOException {
+        public void commitAfterRecovery(Set<CommittedPendingFileListener> committedPendingFileListeners) throws IOException {
             fileCommitter.commitAfterRecovery();
+            invokeListeners(committedPendingFileListeners);
         }
 
         public PendingFileRecoverable getRecoverable() {
             return new HadoopPathBasedPendingFileRecoverable(
-                    fileCommitter.getTargetFilePath(), fileCommitter.getTempFilePath(), fileSize);
+                    fileCommitter.getTargetFilePath(), fileCommitter.getTempFilePath());
+        }
+
+        private void invokeListeners(Set<CommittedPendingFileListener> committedPendingFileListeners) {
+            final String commitName = fileCommitter.getTargetFilePath().toString();
+            committedPendingFileListeners.forEach(
+                    listener -> listener.onCommitted(commitName)
+            );
         }
     }
 
@@ -116,6 +129,8 @@ public class HadoopPathBasedPartFileWriter<IN, BucketID>
         private final Path tempFilePath;
 
         private final long fileSize;
+
+        private transient org.apache.flink.core.fs.Path targetPath;
 
         @Deprecated
         // Remained for compatibility
@@ -141,8 +156,12 @@ public class HadoopPathBasedPartFileWriter<IN, BucketID>
         }
 
         @Override
+        @Nonnull
         public org.apache.flink.core.fs.Path getPath() {
-            return new org.apache.flink.core.fs.Path(targetFilePath.toString());
+            if (targetPath == null) {
+                targetPath = new org.apache.flink.core.fs.Path(targetFilePath.toUri());
+            }
+            return targetPath;
         }
 
         @Override

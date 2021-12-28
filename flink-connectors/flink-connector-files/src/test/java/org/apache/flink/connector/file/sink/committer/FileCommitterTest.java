@@ -101,6 +101,8 @@ public class FileCommitterTest {
         stubBucketWriter
                 .getRecoveredPendingFiles()
                 .forEach(pendingFile -> assertTrue(pendingFile.isCommitted()));
+        // test listener invoked
+        test listener invoked
         assertTrue(committables.stream().allMatch(c -> c.getNumberOfRetries() == 0));
     }
 
@@ -117,6 +119,9 @@ public class FileCommitterTest {
         @Override
         public void commitAfterRecovery() throws IOException {
             committed = true;
+            committedPendingFileListeners.forEach(
+                    listener -> listener.onCommitted("mock-file")
+            );
         }
 
         public boolean isCommitted() {
