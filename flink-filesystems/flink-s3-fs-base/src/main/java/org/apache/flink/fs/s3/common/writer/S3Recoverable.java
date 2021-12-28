@@ -22,6 +22,7 @@ import org.apache.flink.core.fs.RecoverableWriter;
 
 import com.amazonaws.services.s3.model.PartETag;
 
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import java.util.List;
@@ -92,6 +93,12 @@ public final class S3Recoverable implements RecoverableWriter.ResumeRecoverable 
 
     public long incompleteObjectLength() {
         return lastPartObjectLength;
+    }
+
+    @Nonnull
+    @Override
+    public String getCommitName() {
+        return objectName;
     }
 
     // ------------------------------------------------------------------------

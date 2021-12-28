@@ -31,6 +31,7 @@ import org.apache.flink.util.FileUtils;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.Collections;
 
 /** Utilities to generate sample bucket states so that we could test migration of bucket states. */
 public class BucketStateGenerator {
@@ -169,7 +170,8 @@ public class BucketStateGenerator {
                 createBucketWriter(),
                 DefaultRollingPolicy.builder().withMaxPartSize(new MemorySize(10)).build(),
                 null,
-                OutputFileConfig.builder().build());
+                OutputFileConfig.builder().build(),
+                Collections.emptySet());
     }
 
     private void moveToTemplateDirectory(java.nio.file.Path scenarioPath) throws IOException {

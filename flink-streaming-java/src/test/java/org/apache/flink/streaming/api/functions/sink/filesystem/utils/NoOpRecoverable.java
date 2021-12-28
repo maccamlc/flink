@@ -20,10 +20,18 @@ package org.apache.flink.streaming.api.functions.sink.filesystem.utils;
 
 import org.apache.flink.core.fs.RecoverableWriter;
 
+import javax.annotation.Nonnull;
+
 /**
  * An implementation of the {@link RecoverableWriter.ResumeRecoverable ResumeRecoverable} that does
  * nothing.
  *
  * <p>This is to avoid to have to implement all methods for every implementation used in tests.
  */
-public class NoOpRecoverable implements RecoverableWriter.ResumeRecoverable {}
+public class NoOpRecoverable implements RecoverableWriter.ResumeRecoverable {
+    @Override
+    @Nonnull
+    public String getCommitName() {
+        return "NoOp";
+    }
+}

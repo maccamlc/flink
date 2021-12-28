@@ -23,6 +23,8 @@ import org.apache.flink.core.fs.RecoverableWriter.ResumeRecoverable;
 
 import org.apache.hadoop.fs.Path;
 
+import javax.annotation.Nonnull;
+
 import static org.apache.flink.util.Preconditions.checkArgument;
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
@@ -69,5 +71,11 @@ class HadoopFsRecoverable implements CommitRecoverable, ResumeRecoverable {
     @Override
     public String toString() {
         return "HadoopFsRecoverable " + tempFile + " @ " + offset + " -> " + targetFile;
+    }
+
+    @Override
+    @Nonnull
+    public String getCommitName() {
+        return targetFile.toString();
     }
 }

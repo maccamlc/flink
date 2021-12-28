@@ -22,6 +22,8 @@ import org.apache.flink.annotation.Internal;
 import org.apache.flink.core.fs.RecoverableWriter.CommitRecoverable;
 import org.apache.flink.core.fs.RecoverableWriter.ResumeRecoverable;
 
+import javax.annotation.Nonnull;
+
 import java.io.File;
 
 import static org.apache.flink.util.Preconditions.checkArgument;
@@ -63,6 +65,12 @@ class LocalRecoverable implements CommitRecoverable, ResumeRecoverable {
 
     public long offset() {
         return offset;
+    }
+
+    @Override
+    @Nonnull
+    public String getCommitName() {
+        return targetFile.getAbsolutePath();
     }
 
     @Override

@@ -30,6 +30,7 @@ import org.apache.flink.annotation.Internal;
 
 import javax.annotation.Nullable;
 
+import java.util.Collection;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
@@ -103,6 +104,20 @@ public final class Preconditions {
         if (reference == null) {
             throw new NullPointerException(format(errorMessageTemplate, errorMessageArgs));
         }
+        return reference;
+    }
+
+    /**
+     * Ensures that the given object reference is not null and that all contains items are also
+     * not null. Upon violation, a {@code NullPointerException} with no message is thrown.
+     *
+     * @param reference The object reference
+     * @return The object reference itself (generically typed).
+     * @throws NullPointerException Thrown, if the passed reference was null.
+     */
+    public static <T> Collection<T> checkContainsNotNull(@Nullable Collection<T> reference) {
+        checkNotNull(reference);
+        reference.forEach(Preconditions::checkNotNull);
         return reference;
     }
 
