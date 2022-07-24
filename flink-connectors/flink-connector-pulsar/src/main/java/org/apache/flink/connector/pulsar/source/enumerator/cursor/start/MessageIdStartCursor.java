@@ -27,7 +27,7 @@ import org.apache.pulsar.client.impl.MessageIdImpl;
 
 import static org.apache.flink.util.Preconditions.checkState;
 
-/** This cursor would left pulsar start consuming from a specific message id. */
+/** This cursor would leave pulsar start consuming from a specific message id. */
 public class MessageIdStartCursor implements StartCursor {
     private static final long serialVersionUID = -8057345435887170111L;
 
@@ -53,9 +53,13 @@ public class MessageIdStartCursor implements StartCursor {
                     messageId instanceof MessageIdImpl,
                     "We only support normal message id and batch message id.");
             MessageIdImpl id = (MessageIdImpl) messageId;
-            this.messageId =
-                    new MessageIdImpl(
-                            id.getLedgerId(), id.getEntryId() + 1, id.getPartitionIndex());
+            if (MessageId.earliest.equals(messageId) || MessageId.latest.equals(messageId)) {
+                this.messageId = messageId;
+            } else {
+                this.messageId =
+                        new MessageIdImpl(
+                                id.getLedgerId(), id.getEntryId() + 1, id.getPartitionIndex());
+            }
         }
     }
 

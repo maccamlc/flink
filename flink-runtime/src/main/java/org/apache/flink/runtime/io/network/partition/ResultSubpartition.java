@@ -19,6 +19,7 @@
 package org.apache.flink.runtime.io.network.partition;
 
 import org.apache.flink.annotation.VisibleForTesting;
+import org.apache.flink.runtime.checkpoint.CheckpointException;
 import org.apache.flink.runtime.checkpoint.channel.ResultSubpartitionInfo;
 import org.apache.flink.runtime.io.network.buffer.Buffer;
 import org.apache.flink.runtime.io.network.buffer.BufferConsumer;
@@ -48,9 +49,9 @@ public abstract class ResultSubpartition {
     }
 
     /** Gets the total numbers of buffers (data buffers plus events). */
-    protected abstract long getTotalNumberOfBuffers();
+    protected abstract long getTotalNumberOfBuffersUnsafe();
 
-    protected abstract long getTotalNumberOfBytes();
+    protected abstract long getTotalNumberOfBytesUnsafe();
 
     public int getSubPartitionIndex() {
         return subpartitionInfo.getSubPartitionIdx();
@@ -60,6 +61,10 @@ public abstract class ResultSubpartition {
     protected void onConsumedSubpartition() {
         parent.onConsumedSubpartition(getSubPartitionIndex());
     }
+
+    public abstract void alignedBarrierTimeout(long checkpointId) throws IOException;
+
+    public abstract void abortCheckpoint(long checkpointId, CheckpointException cause);
 
     @VisibleForTesting
     public final int add(BufferConsumer bufferConsumer) throws IOException {

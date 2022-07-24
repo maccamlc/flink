@@ -17,6 +17,7 @@
 
 package org.apache.flink.runtime.operators.lifecycle;
 
+import org.apache.flink.changelog.fs.FsStateChangelogStorageFactory;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.runtime.OperatorIDPair;
 import org.apache.flink.runtime.jobgraph.JobVertexID;
@@ -36,12 +37,16 @@ import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.junit.rules.Timeout;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameter;
 
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import static java.util.Arrays.asList;
 import static java.util.stream.StreamSupport.stream;
@@ -54,7 +59,6 @@ import static org.apache.flink.runtime.operators.lifecycle.graph.TestJobBuilders
 import static org.apache.flink.runtime.operators.lifecycle.graph.TestJobBuilders.SIMPLE_GRAPH_BUILDER;
 import static org.apache.flink.runtime.operators.lifecycle.validation.TestJobDataFlowValidator.checkDataFlow;
 import static org.apache.flink.runtime.operators.lifecycle.validation.TestOperatorLifecycleValidator.checkOperatorsLifecycle;
-import static org.apache.flink.streaming.api.environment.ExecutionCheckpointingOptions.ENABLE_CHECKPOINTS_AFTER_TASKS_FINISH;
 
 /**
  * A test suite to check that the operator methods are called according to contract when sources are
@@ -72,6 +76,8 @@ public class PartiallyFinishedSourcesITCase extends TestLogger {
 
     @Rule public final SharedObjects sharedObjects = SharedObjects.create();
 
+    @Rule public Timeout timeoutRule = new Timeout(10, TimeUnit.MINUTES);
+
     private MiniClusterWithClientResource miniClusterResource;
 
     @Before
@@ -82,6 +88,14 @@ public class PartiallyFinishedSourcesITCase extends TestLogger {
         // - "region" is currently the default
         // - "full" is enforced by Adaptive/Reactive scheduler (even when parameterized)
         configuration.set(EXECUTION_FAILOVER_STRATEGY, failoverStrategy);
+
+        // If changelog backend is enabled then this test might run too slow with in-memory
+        // implementation - use fs-based instead.
+        // The randomization currently happens on the job level (environment); while this factory
+        // can only be set on the cluster level; so we do it unconditionally here.
+        FsStateChangelogStorageFactory.configure(
+                configuration, TEMPORARY_FOLDER.newFolder(), Duration.ofMinutes(1), 10);
+
         miniClusterResource =
                 new MiniClusterWithClientResource(
                         new MiniClusterResourceConfiguration.Builder()
@@ -116,7 +130,8 @@ public class PartiallyFinishedSourcesITCase extends TestLogger {
         TestJobWithDescription testJob = buildJob();
 
         // pick any source operator
-        String finishingOperatorID = testJob.sources.iterator().next();
+        Iterator<String> iterator = testJob.sources.iterator();
+        String finishingOperatorID = iterator.next();
         JobVertexID finishingVertexID = findJobVertexID(testJob, finishingOperatorID);
 
         TestJobExecutor executor =
@@ -129,7 +144,13 @@ public class PartiallyFinishedSourcesITCase extends TestLogger {
                         .waitForEvent(CheckpointCompletedEvent.class)
                         .waitForEvent(CheckpointCompletedEvent.class);
         if (failover) {
-            executor.triggerFailover();
+            // If requested, fail the source operator. Failing non-source operator might not work
+            // because it can be idle if all its sources were finished before.
+            // However, if all source subtasks were finished, we need another source to fail.
+            // Otherwise, (if finished single source subtask), rely on terminal property of
+            // FINISH_SOURCES command for choosing a different subtask to fail.
+            executor.triggerFailover(
+                    subtaskScope == ALL_SUBTASKS ? iterator.next() : finishingOperatorID);
         }
         executor.sendBroadcastCommand(FINISH_SOURCES, ALL_SUBTASKS)
                 .waitForTermination()
@@ -142,7 +163,7 @@ public class PartiallyFinishedSourcesITCase extends TestLogger {
     private TestJobWithDescription buildJob() throws Exception {
         return graphBuilder.build(
                 sharedObjects,
-                cfg -> cfg.setBoolean(ENABLE_CHECKPOINTS_AFTER_TASKS_FINISH, true),
+                cfg -> {},
                 env -> {
                     env.setRestartStrategy(fixedDelayRestart(1, 0));
                     // checkpoints can hang (because of not yet fixed bugs and triggering

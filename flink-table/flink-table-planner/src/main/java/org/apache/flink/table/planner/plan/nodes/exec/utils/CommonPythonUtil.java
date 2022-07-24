@@ -21,8 +21,8 @@ package org.apache.flink.table.planner.plan.nodes.exec.utils;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.table.api.TableConfig;
 import org.apache.flink.table.api.TableException;
 import org.apache.flink.table.api.dataview.DataView;
 import org.apache.flink.table.api.dataview.ListView;
@@ -36,17 +36,9 @@ import org.apache.flink.table.functions.python.PythonFunctionInfo;
 import org.apache.flink.table.planner.functions.aggfunctions.AvgAggFunction;
 import org.apache.flink.table.planner.functions.aggfunctions.Count1AggFunction;
 import org.apache.flink.table.planner.functions.aggfunctions.CountAggFunction;
-import org.apache.flink.table.planner.functions.aggfunctions.FirstValueAggFunction;
-import org.apache.flink.table.planner.functions.aggfunctions.FirstValueWithRetractAggFunction;
-import org.apache.flink.table.planner.functions.aggfunctions.LastValueAggFunction;
-import org.apache.flink.table.planner.functions.aggfunctions.LastValueWithRetractAggFunction;
 import org.apache.flink.table.planner.functions.aggfunctions.ListAggFunction;
-import org.apache.flink.table.planner.functions.aggfunctions.ListAggWithRetractAggFunction;
-import org.apache.flink.table.planner.functions.aggfunctions.ListAggWsWithRetractAggFunction;
 import org.apache.flink.table.planner.functions.aggfunctions.MaxAggFunction;
-import org.apache.flink.table.planner.functions.aggfunctions.MaxWithRetractAggFunction;
 import org.apache.flink.table.planner.functions.aggfunctions.MinAggFunction;
-import org.apache.flink.table.planner.functions.aggfunctions.MinWithRetractAggFunction;
 import org.apache.flink.table.planner.functions.aggfunctions.Sum0AggFunction;
 import org.apache.flink.table.planner.functions.aggfunctions.SumAggFunction;
 import org.apache.flink.table.planner.functions.aggfunctions.SumWithRetractAggFunction;
@@ -61,6 +53,14 @@ import org.apache.flink.table.planner.utils.DummyStreamExecutionEnvironment;
 import org.apache.flink.table.runtime.dataview.DataViewSpec;
 import org.apache.flink.table.runtime.dataview.ListViewSpec;
 import org.apache.flink.table.runtime.dataview.MapViewSpec;
+import org.apache.flink.table.runtime.functions.aggregate.FirstValueAggFunction;
+import org.apache.flink.table.runtime.functions.aggregate.FirstValueWithRetractAggFunction;
+import org.apache.flink.table.runtime.functions.aggregate.LastValueAggFunction;
+import org.apache.flink.table.runtime.functions.aggregate.LastValueWithRetractAggFunction;
+import org.apache.flink.table.runtime.functions.aggregate.ListAggWithRetractAggFunction;
+import org.apache.flink.table.runtime.functions.aggregate.ListAggWsWithRetractAggFunction;
+import org.apache.flink.table.runtime.functions.aggregate.MaxWithRetractAggFunction;
+import org.apache.flink.table.runtime.functions.aggregate.MinWithRetractAggFunction;
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.FieldsDataType;
 import org.apache.flink.table.types.inference.TypeInference;
@@ -98,7 +98,7 @@ public class CommonPythonUtil {
 
     private CommonPythonUtil() {}
 
-    public static Class loadClass(String className) {
+    public static Class<?> loadClass(String className) {
         try {
             return Class.forName(className, false, Thread.currentThread().getContextClassLoader());
         } catch (ClassNotFoundException e) {
@@ -107,21 +107,20 @@ public class CommonPythonUtil {
         }
     }
 
-    @SuppressWarnings("unchecked")
-    public static Configuration getMergedConfig(
-            StreamExecutionEnvironment env, TableConfig tableConfig) {
-        Class clazz = loadClass(PYTHON_CONFIG_UTILS_CLASS);
+    public static Configuration extractPythonConfiguration(
+            StreamExecutionEnvironment env, ReadableConfig tableConfig) {
+        Class<?> clazz = loadClass(PYTHON_CONFIG_UTILS_CLASS);
         try {
             StreamExecutionEnvironment realEnv = getRealEnvironment(env);
             Method method =
                     clazz.getDeclaredMethod(
-                            "getMergedConfig", StreamExecutionEnvironment.class, TableConfig.class);
-            return (Configuration) method.invoke(null, realEnv, tableConfig);
+                            "extractPythonConfiguration", List.class, ReadableConfig.class);
+            return (Configuration) method.invoke(null, realEnv.getCachedFiles(), tableConfig);
         } catch (NoSuchFieldException
                 | IllegalAccessException
                 | NoSuchMethodException
                 | InvocationTargetException e) {
-            throw new TableException("Method getMergedConfig accessed failed.", e);
+            throw new TableException("Method extractPythonConfiguration accessed failed.", e);
         }
     }
 
@@ -149,12 +148,26 @@ public class CommonPythonUtil {
 
     @SuppressWarnings("unchecked")
     public static boolean isPythonWorkerUsingManagedMemory(Configuration config) {
-        Class clazz = loadClass(PYTHON_OPTIONS_CLASS);
+        Class<?> clazz = loadClass(PYTHON_OPTIONS_CLASS);
         try {
             return config.getBoolean(
                     (ConfigOption<Boolean>) (clazz.getField("USE_MANAGED_MEMORY").get(null)));
         } catch (IllegalAccessException | NoSuchFieldException e) {
             throw new TableException("Field USE_MANAGED_MEMORY accessed failed.", e);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    public static boolean isPythonWorkerInProcessMode(Configuration config) {
+        Class<?> clazz = loadClass(PYTHON_OPTIONS_CLASS);
+        try {
+            return config.getString(
+                            (ConfigOption<String>)
+                                    (clazz.getField("PYTHON_EXECUTION_MODE").get(null)))
+                    .equalsIgnoreCase("process");
+
+        } catch (IllegalAccessException | NoSuchFieldException e) {
+            throw new TableException("Field PYTHON_EXECUTION_MODE accessed failed.", e);
         }
     }
 
@@ -387,12 +400,12 @@ public class CommonPythonUtil {
         return (byte[]) pickleValue.invoke(null, value, type);
     }
 
-    @SuppressWarnings("unchecked")
     private static void loadPickleValue() {
         if (pickleValue == null) {
             synchronized (CommonPythonUtil.class) {
                 if (pickleValue == null) {
-                    Class clazz = loadClass("org.apache.flink.api.common.python.PythonBridgeUtils");
+                    Class<?> clazz =
+                            loadClass("org.apache.flink.api.common.python.PythonBridgeUtils");
                     try {
                         pickleValue = clazz.getMethod("pickleValue", Object.class, byte.class);
                     } catch (NoSuchMethodException e) {

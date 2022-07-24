@@ -19,6 +19,7 @@
 package org.apache.flink.state.changelog;
 
 import org.apache.flink.api.common.JobID;
+import org.apache.flink.api.common.state.StateTtlConfig;
 import org.apache.flink.api.common.state.ValueState;
 import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
@@ -27,13 +28,17 @@ import org.apache.flink.api.common.typeutils.base.IntSerializer;
 import org.apache.flink.api.java.typeutils.GenericTypeInfo;
 import org.apache.flink.changelog.fs.ChangelogStorageMetricGroup;
 import org.apache.flink.changelog.fs.FsStateChangelogStorage;
+import org.apache.flink.changelog.fs.TaskChangelogRegistry;
 import org.apache.flink.core.fs.CloseableRegistry;
 import org.apache.flink.core.fs.Path;
+import org.apache.flink.metrics.MetricGroup;
 import org.apache.flink.metrics.groups.UnregisteredMetricsGroup;
 import org.apache.flink.runtime.checkpoint.CheckpointOptions;
 import org.apache.flink.runtime.execution.Environment;
 import org.apache.flink.runtime.mailbox.SyncMailboxExecutor;
 import org.apache.flink.runtime.metrics.groups.UnregisteredMetricGroups;
+import org.apache.flink.runtime.state.CheckpointStateOutputStream;
+import org.apache.flink.runtime.state.CheckpointStateToolset;
 import org.apache.flink.runtime.state.CheckpointStorageAccess;
 import org.apache.flink.runtime.state.CheckpointStorageLocation;
 import org.apache.flink.runtime.state.CheckpointStorageLocationReference;
@@ -84,7 +89,13 @@ public class ChangelogStateBackendTestUtils {
             throws Exception {
 
         return createKeyedBackend(
-                stateBackend, keySerializer, numberOfKeyGroups, keyGroupRange, null, env);
+                stateBackend,
+                keySerializer,
+                numberOfKeyGroups,
+                keyGroupRange,
+                new UnregisteredMetricsGroup(),
+                null,
+                env);
     }
 
     public static <K> CheckpointableKeyedStateBackend<K> createKeyedBackend(
@@ -92,6 +103,26 @@ public class ChangelogStateBackendTestUtils {
             TypeSerializer<K> keySerializer,
             int numberOfKeyGroups,
             KeyGroupRange keyGroupRange,
+            MetricGroup metricGroup,
+            Environment env)
+            throws Exception {
+
+        return createKeyedBackend(
+                stateBackend,
+                keySerializer,
+                numberOfKeyGroups,
+                keyGroupRange,
+                metricGroup,
+                null,
+                env);
+    }
+
+    public static <K> CheckpointableKeyedStateBackend<K> createKeyedBackend(
+            StateBackend stateBackend,
+            TypeSerializer<K> keySerializer,
+            int numberOfKeyGroups,
+            KeyGroupRange keyGroupRange,
+            MetricGroup metricGroup,
             KeyedStateHandle state,
             Environment env)
             throws Exception {
@@ -105,7 +136,7 @@ public class ChangelogStateBackendTestUtils {
                 keyGroupRange,
                 env.getTaskKvStateRegistry(),
                 TtlTimeProvider.DEFAULT,
-                new UnregisteredMetricsGroup(),
+                metricGroup,
                 state == null ? Collections.emptyList() : Collections.singletonList(state),
                 new CloseableRegistry());
     }
@@ -114,14 +145,37 @@ public class ChangelogStateBackendTestUtils {
             StateBackend stateBackend, Environment env) throws Exception {
 
         return createKeyedBackend(
-                stateBackend, IntSerializer.INSTANCE, 10, new KeyGroupRange(0, 9), env);
+                stateBackend,
+                IntSerializer.INSTANCE,
+                10,
+                new KeyGroupRange(0, 9),
+                new UnregisteredMetricsGroup(),
+                env);
+    }
+
+    public static CheckpointableKeyedStateBackend<Integer> createKeyedBackend(
+            StateBackend stateBackend, Environment env, MetricGroup metricGroup) throws Exception {
+
+        return createKeyedBackend(
+                stateBackend,
+                IntSerializer.INSTANCE,
+                10,
+                new KeyGroupRange(0, 9),
+                metricGroup,
+                env);
     }
 
     private static CheckpointableKeyedStateBackend<Integer> restoreKeyedBackend(
             StateBackend stateBackend, KeyedStateHandle state, Environment env) throws Exception {
 
         return createKeyedBackend(
-                stateBackend, IntSerializer.INSTANCE, 10, new KeyGroupRange(0, 9), state, env);
+                stateBackend,
+                IntSerializer.INSTANCE,
+                10,
+                new KeyGroupRange(0, 9),
+                new UnregisteredMetricsGroup(),
+                state,
+                env);
     }
 
     public static TestTaskStateManager createTaskStateManager(File changelogStoragePath)
@@ -129,17 +183,22 @@ public class ChangelogStateBackendTestUtils {
         return TestTaskStateManager.builder()
                 .setStateChangelogStorage(
                         new FsStateChangelogStorage(
+                                JobID.generate(),
                                 Path.fromLocalFile(changelogStoragePath),
                                 false,
                                 1024,
                                 new ChangelogStorageMetricGroup(
                                         UnregisteredMetricGroups
-                                                .createUnregisteredTaskManagerJobMetricGroup())))
+                                                .createUnregisteredTaskManagerJobMetricGroup()),
+                                TaskChangelogRegistry.NO_OP))
                 .build();
     }
 
     public static void testMaterializedRestore(
-            StateBackend stateBackend, Environment env, CheckpointStreamFactory streamFactory)
+            StateBackend stateBackend,
+            StateTtlConfig stateTtlConfig,
+            Environment env,
+            CheckpointStreamFactory streamFactory)
             throws Exception {
         SharedStateRegistry sharedStateRegistry = new SharedStateRegistryImpl();
 
@@ -147,6 +206,9 @@ public class ChangelogStateBackendTestUtils {
                 new GenericTypeInfo<>(StateBackendTestBase.TestPojo.class);
         ValueStateDescriptor<StateBackendTestBase.TestPojo> kvId =
                 new ValueStateDescriptor<>("id", pojoType);
+        if (stateTtlConfig.isEnabled()) {
+            kvId.enableTimeToLive(stateTtlConfig);
+        }
 
         ChangelogKeyedStateBackend<Integer> keyedBackend =
                 (ChangelogKeyedStateBackend<Integer>) createKeyedBackend(stateBackend, env);
@@ -166,10 +228,6 @@ public class ChangelogStateBackendTestUtils {
             keyedBackend.setCurrentKey(2);
             state.update(new StateBackendTestBase.TestPojo("u2", 2));
 
-            // In this test, every materialization is triggered explicitly by calling
-            // triggerMaterialization.
-            // Automatic/periodic triggering is disabled by NOT starting the
-            // periodicMaterializationManager
             periodicMaterializationManager.triggerMaterialization();
 
             keyedBackend.setCurrentKey(2);
@@ -320,17 +378,30 @@ public class ChangelogStateBackendTestUtils {
     private static PeriodicMaterializationManager periodicMaterializationManager(
             ChangelogKeyedStateBackend<Integer> keyedBackend,
             CompletableFuture<Void> asyncComplete) {
+        return periodicMaterializationManager(
+                keyedBackend,
+                UnregisteredMetricGroups.createUnregisteredOperatorMetricGroup(),
+                asyncComplete);
+    }
+
+    static PeriodicMaterializationManager periodicMaterializationManager(
+            ChangelogKeyedStateBackend<Integer> keyedBackend,
+            MetricGroup metricGroup,
+            CompletableFuture<Void> asyncComplete) {
         return new PeriodicMaterializationManager(
                 new SyncMailboxExecutor(),
                 Executors.newDirectExecutorService(),
                 "testTask",
                 (message, exception) -> asyncComplete.completeExceptionally(exception),
                 keyedBackend,
+                new ChangelogMaterializationMetricGroup(metricGroup),
                 10,
-                1);
+                1,
+                "testTask");
     }
 
-    static class DummyCheckpointingStorageAccess implements CheckpointStorageAccess {
+    /** Dummy {@link CheckpointStorageAccess}. */
+    public static class DummyCheckpointingStorageAccess implements CheckpointStorageAccess {
 
         DummyCheckpointingStorageAccess() {}
 
@@ -374,7 +445,13 @@ public class ChangelogStateBackendTestUtils {
         }
 
         @Override
-        public CheckpointStreamFactory.CheckpointStateOutputStream createTaskOwnedStateStream() {
+        public CheckpointStateOutputStream createTaskOwnedStateStream() {
+            throw new UnsupportedOperationException(
+                    "Checkpoints are not supported in a single key state backend");
+        }
+
+        @Override
+        public CheckpointStateToolset createTaskOwnedCheckpointStateToolset() {
             throw new UnsupportedOperationException(
                     "Checkpoints are not supported in a single key state backend");
         }

@@ -25,8 +25,7 @@ under the License.
 	<parent>
 		<groupId>org.apache.flink</groupId>
 		<artifactId>flink-formats</artifactId>
-		<version>1.15-SNAPSHOT</version>
-		<relativePath>..</relativePath>
+		<version>1.16-SNAPSHOT</version>
 	</parent>
 
 	<artifactId>flink-parquet</artifactId>
@@ -152,8 +151,22 @@ under the License.
 				</exclusion>
 			</exclusions>
 		</dependency>
+		<!-- Bump protobuf version, see FLINK-23230 -->
+		<dependency>
+			<groupId>com.google.protobuf</groupId>
+			<artifactId>protobuf-java</artifactId>
+			<version>${protoc.version}</version>
+		</dependency>
 
 		<!-- Tests -->
+
+		<!--Support ParquetFileSystemStatisticsReport using calcite verify plan methods, see FLINK-27990 -->
+		<dependency>
+			<groupId>com.google.guava</groupId>
+			<artifactId>guava</artifactId>
+			<version>${guava.version}</version>
+			<scope>test</scope>
+		</dependency>
 
 		<dependency>
 			<groupId>org.apache.flink</groupId>
@@ -198,6 +211,14 @@ under the License.
 			<scope>test</scope>
 		</dependency>
 
+		<!-- ArchUit test dependencies -->
+
+		<dependency>
+			<groupId>org.apache.flink</groupId>
+			<artifactId>flink-architecture-tests-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+
 		<!-- Required due to UniqueBucketAssigner -->
 		<dependency>
 			<groupId>org.apache.flink</groupId>
@@ -207,6 +228,16 @@ under the License.
 			<type>test-jar</type>
 		</dependency>
 	</dependencies>
+
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>com.google.guava</groupId>
+				<artifactId>guava</artifactId>
+				<version>27.0.1-jre</version>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
 
 	<build>
 		<extensions>
@@ -254,7 +285,7 @@ under the License.
 					<protoTestSourceRoot>${project.basedir}/src/test/resources/protobuf</protoTestSourceRoot>
 					<!-- Generates classes into a separate directory since the generator always removes existing files. -->
 					<outputDirectory>${project.build.directory}/generated-test-sources/protobuf/java</outputDirectory>
-					<protocArtifact>com.google.protobuf:protoc:3.5.1:exe:${os.detected.classifier}</protocArtifact>
+					<protocArtifact>com.google.protobuf:protoc:${protoc.version}:exe:${os.detected.classifier}</protocArtifact>
 				</configuration>
 				<executions>
 					<execution>

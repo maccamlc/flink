@@ -18,6 +18,7 @@
 
 package org.apache.flink.contrib.streaming.state;
 
+import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.ReadableConfig;
@@ -34,6 +35,7 @@ import org.rocksdb.Filter;
 import org.rocksdb.IndexType;
 import org.rocksdb.PlainTableConfig;
 import org.rocksdb.ReadOptions;
+import org.rocksdb.Statistics;
 import org.rocksdb.TableFormatConfig;
 import org.rocksdb.WriteOptions;
 import org.slf4j.Logger;
@@ -41,6 +43,7 @@ import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Collection;
 
@@ -72,35 +75,42 @@ public final class RocksDBResourceContainer implements AutoCloseable {
      */
     @Nullable private final OpaqueMemoryResource<RocksDBSharedResources> sharedResources;
 
+    private final boolean enableStatistics;
+
     /** The handles to be closed when the container is closed. */
     private final ArrayList<AutoCloseable> handlesToClose;
 
+    @VisibleForTesting
     public RocksDBResourceContainer() {
-        this(new Configuration(), PredefinedOptions.DEFAULT, null, null);
+        this(new Configuration(), PredefinedOptions.DEFAULT, null, null, false);
     }
 
+    @VisibleForTesting
     public RocksDBResourceContainer(
             PredefinedOptions predefinedOptions, @Nullable RocksDBOptionsFactory optionsFactory) {
-        this(new Configuration(), predefinedOptions, optionsFactory, null);
+        this(new Configuration(), predefinedOptions, optionsFactory, null, false);
     }
 
+    @VisibleForTesting
     public RocksDBResourceContainer(
             PredefinedOptions predefinedOptions,
             @Nullable RocksDBOptionsFactory optionsFactory,
             @Nullable OpaqueMemoryResource<RocksDBSharedResources> sharedResources) {
-        this(new Configuration(), predefinedOptions, optionsFactory, sharedResources);
+        this(new Configuration(), predefinedOptions, optionsFactory, sharedResources, false);
     }
 
     public RocksDBResourceContainer(
             ReadableConfig configuration,
             PredefinedOptions predefinedOptions,
             @Nullable RocksDBOptionsFactory optionsFactory,
-            @Nullable OpaqueMemoryResource<RocksDBSharedResources> sharedResources) {
+            @Nullable OpaqueMemoryResource<RocksDBSharedResources> sharedResources,
+            boolean enableStatistics) {
 
         this.configuration = configuration;
         this.predefinedOptions = checkNotNull(predefinedOptions);
         this.optionsFactory = optionsFactory;
         this.sharedResources = sharedResources;
+        this.enableStatistics = enableStatistics;
         this.handlesToClose = new ArrayList<>();
     }
 
@@ -124,6 +134,12 @@ public final class RocksDBResourceContainer implements AutoCloseable {
         // if sharedResources is non-null, use the write buffer manager from it.
         if (sharedResources != null) {
             opt.setWriteBufferManager(sharedResources.getResourceHandle().getWriteBufferManager());
+        }
+
+        if (enableStatistics) {
+            Statistics statistics = new Statistics();
+            opt.setStatistics(statistics);
+            handlesToClose.add(statistics);
         }
 
         return opt;
@@ -297,7 +313,9 @@ public final class RocksDBResourceContainer implements AutoCloseable {
         currentOptions.setInfoLogLevel(internalGetOption(RocksDBConfigurableOptions.LOG_LEVEL));
 
         String logDir = internalGetOption(RocksDBConfigurableOptions.LOG_DIR);
-        if (logDir != null && !logDir.isEmpty()) {
+        if (logDir == null || logDir.isEmpty()) {
+            relocateDefaultDbLogDir(currentOptions);
+        } else {
             currentOptions.setDbLogDir(logDir);
         }
 
@@ -370,5 +388,32 @@ public final class RocksDBResourceContainer implements AutoCloseable {
         }
 
         return currentOptions.setTableFormatConfig(blockBasedTableConfig);
+    }
+
+    /**
+     * Relocates the default log directory of RocksDB with the Flink log directory. Finds the Flink
+     * log directory using log.file Java property that is set during startup.
+     *
+     * @param dbOptions The RocksDB {@link DBOptions}.
+     */
+    private void relocateDefaultDbLogDir(DBOptions dbOptions) {
+        String logFilePath = System.getProperty("log.file");
+        if (logFilePath != null) {
+            File logFile = resolveFileLocation(logFilePath);
+            if (logFile != null && resolveFileLocation(logFile.getParent()) != null) {
+                dbOptions.setDbLogDir(logFile.getParent());
+            }
+        }
+    }
+
+    /**
+     * Verify log file location.
+     *
+     * @param logFilePath Path to log file
+     * @return File or null if not a valid log file
+     */
+    private File resolveFileLocation(String logFilePath) {
+        File logFile = new File(logFilePath);
+        return (logFile.exists() && logFile.canRead()) ? logFile : null;
     }
 }

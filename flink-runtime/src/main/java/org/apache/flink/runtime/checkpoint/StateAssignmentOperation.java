@@ -91,13 +91,13 @@ public class StateAssignmentOperation {
         this.tasks = Preconditions.checkNotNull(tasks);
         this.operatorStates = Preconditions.checkNotNull(operatorStates);
         this.allowNonRestoredState = allowNonRestoredState;
-        vertexAssignments = new HashMap<>(tasks.size());
+        this.vertexAssignments = new HashMap<>(tasks.size());
     }
 
     public void assignStates() {
-        Map<OperatorID, OperatorState> localOperators = new HashMap<>(operatorStates);
-
         checkStateMappingCompleteness(allowNonRestoredState, operatorStates, tasks);
+
+        Map<OperatorID, OperatorState> localOperators = new HashMap<>(operatorStates);
 
         // find the states of all operators belonging to this task and compute additional
         // information in first pass
@@ -143,7 +143,12 @@ public class StateAssignmentOperation {
 
         // actually assign the state
         for (TaskStateAssignment stateAssignment : vertexAssignments.values()) {
-            if (stateAssignment.hasNonFinishedState || stateAssignment.isFullyFinished) {
+            // If upstream has output states, even the empty task state should be assigned for the
+            // current task in order to notify this task that the old states will send to it which
+            // likely should be filtered.
+            if (stateAssignment.hasNonFinishedState
+                    || stateAssignment.isFullyFinished
+                    || stateAssignment.hasUpstreamOutputStates()) {
                 assignTaskStateToExecutionJobVertices(stateAssignment);
             }
         }
@@ -167,7 +172,7 @@ public class StateAssignmentOperation {
          * 		parallelism0 parallelism1 parallelism2
          * op0   states0,0    state0,1	   state0,2
          * op1
-         * op2   states2,0    state2,1	   state1,2
+         * op2   states2,0    state2,1	   state2,2
          * op3   states3,0    state3,1     state3,2
          *
          * The new ManagedOperatorStates with new parallelism 4:
@@ -712,11 +717,13 @@ public class StateAssignmentOperation {
         }
         for (Map.Entry<OperatorID, OperatorState> operatorGroupStateEntry :
                 operatorStates.entrySet()) {
-            OperatorState operatorState = operatorGroupStateEntry.getValue();
             // ----------------------------------------find operator for
             // state---------------------------------------------
 
             if (!allOperatorIDs.contains(operatorGroupStateEntry.getKey())) {
+
+                OperatorState operatorState = operatorGroupStateEntry.getValue();
+
                 if (allowNonRestoredState) {
                     LOG.info(
                             "Skipped checkpoint state for operator {}.",

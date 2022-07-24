@@ -31,6 +31,7 @@ import org.apache.flink.runtime.deployment.TaskDeploymentDescriptorFactory;
 import org.apache.flink.runtime.executiongraph.DefaultExecutionGraphBuilder;
 import org.apache.flink.runtime.executiongraph.ExecutionDeploymentListener;
 import org.apache.flink.runtime.executiongraph.ExecutionGraph;
+import org.apache.flink.runtime.executiongraph.ExecutionJobVertex;
 import org.apache.flink.runtime.executiongraph.ExecutionStateUpdateListener;
 import org.apache.flink.runtime.executiongraph.VertexAttemptNumberStore;
 import org.apache.flink.runtime.io.network.partition.JobMasterPartitionTracker;
@@ -49,6 +50,8 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.function.Supplier;
 
+import static org.apache.flink.util.Preconditions.checkNotNull;
+
 /** Default {@link ExecutionGraphFactory} implementation. */
 public class DefaultExecutionGraphFactory implements ExecutionGraphFactory {
 
@@ -63,6 +66,8 @@ public class DefaultExecutionGraphFactory implements ExecutionGraphFactory {
     private final ShuffleMaster<?> shuffleMaster;
     private final JobMasterPartitionTracker jobMasterPartitionTracker;
     private final Supplier<CheckpointStatsTracker> checkpointStatsTrackerFactory;
+    private final boolean isDynamicGraph;
+    private final ExecutionJobVertex.Factory executionJobVertexFactory;
 
     public DefaultExecutionGraphFactory(
             Configuration configuration,
@@ -75,6 +80,34 @@ public class DefaultExecutionGraphFactory implements ExecutionGraphFactory {
             BlobWriter blobWriter,
             ShuffleMaster<?> shuffleMaster,
             JobMasterPartitionTracker jobMasterPartitionTracker) {
+        this(
+                configuration,
+                userCodeClassLoader,
+                executionDeploymentTracker,
+                futureExecutor,
+                ioExecutor,
+                rpcTimeout,
+                jobManagerJobMetricGroup,
+                blobWriter,
+                shuffleMaster,
+                jobMasterPartitionTracker,
+                false,
+                new ExecutionJobVertex.Factory());
+    }
+
+    public DefaultExecutionGraphFactory(
+            Configuration configuration,
+            ClassLoader userCodeClassLoader,
+            ExecutionDeploymentTracker executionDeploymentTracker,
+            ScheduledExecutorService futureExecutor,
+            Executor ioExecutor,
+            Time rpcTimeout,
+            JobManagerJobMetricGroup jobManagerJobMetricGroup,
+            BlobWriter blobWriter,
+            ShuffleMaster<?> shuffleMaster,
+            JobMasterPartitionTracker jobMasterPartitionTracker,
+            boolean isDynamicGraph,
+            ExecutionJobVertex.Factory executionJobVertexFactory) {
         this.configuration = configuration;
         this.userCodeClassLoader = userCodeClassLoader;
         this.executionDeploymentTracker = executionDeploymentTracker;
@@ -92,6 +125,8 @@ public class DefaultExecutionGraphFactory implements ExecutionGraphFactory {
                                         configuration.getInteger(
                                                 WebOptions.CHECKPOINTS_HISTORY_SIZE),
                                         jobManagerJobMetricGroup));
+        this.isDynamicGraph = isDynamicGraph;
+        this.executionJobVertexFactory = checkNotNull(executionJobVertexFactory);
     }
 
     @Override
@@ -104,12 +139,14 @@ public class DefaultExecutionGraphFactory implements ExecutionGraphFactory {
             long initializationTimestamp,
             VertexAttemptNumberStore vertexAttemptNumberStore,
             VertexParallelismStore vertexParallelismStore,
+            ExecutionStateUpdateListener executionStateUpdateListener,
             Logger log)
             throws Exception {
         ExecutionDeploymentListener executionDeploymentListener =
                 new ExecutionDeploymentTrackerDeploymentListenerAdapter(executionDeploymentTracker);
-        ExecutionStateUpdateListener executionStateUpdateListener =
-                (execution, newState) -> {
+        ExecutionStateUpdateListener combinedExecutionStateUpdateListener =
+                (execution, previousState, newState) -> {
+                    executionStateUpdateListener.onStateUpdate(execution, previousState, newState);
                     if (newState.isTerminal()) {
                         executionDeploymentTracker.stopTrackingDeploymentOf(execution);
                     }
@@ -132,11 +169,13 @@ public class DefaultExecutionGraphFactory implements ExecutionGraphFactory {
                         jobMasterPartitionTracker,
                         partitionLocationConstraint,
                         executionDeploymentListener,
-                        executionStateUpdateListener,
+                        combinedExecutionStateUpdateListener,
                         initializationTimestamp,
                         vertexAttemptNumberStore,
                         vertexParallelismStore,
-                        checkpointStatsTrackerFactory);
+                        checkpointStatsTrackerFactory,
+                        isDynamicGraph,
+                        executionJobVertexFactory);
 
         final CheckpointCoordinator checkpointCoordinator =
                 newExecutionGraph.getCheckpointCoordinator();

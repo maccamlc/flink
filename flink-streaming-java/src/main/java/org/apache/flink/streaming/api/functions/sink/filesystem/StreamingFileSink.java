@@ -92,8 +92,10 @@ import static java.util.Optional.ofNullable;
  * arrived after the checkpoint from which we restore.
  *
  * @param <IN> Type of the elements emitted by this sink
+ * @deprecated Use {@link org.apache.flink.connector.file.sink.FileSink} instead.
  */
 @PublicEvolving
+@Deprecated
 public class StreamingFileSink<IN> extends RichSinkFunction<IN>
         implements CheckpointedFunction, CheckpointListener {
 

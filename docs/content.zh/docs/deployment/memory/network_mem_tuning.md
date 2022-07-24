@@ -71,10 +71,6 @@ Flink 1.14 新引入的缓冲消胀机制尝试通过自动调整缓冲数据量
 
 当前，有一些场景还没有自动地被缓冲消胀机制处理。
 
-#### 大消息
-
-如果您的消息超过了[最小内存段 (memory segment) 长度]({{< ref "docs/deployment/config" >}}#taskmanager-memory-min-segment-size)，缓冲消胀可能会极大减少单个缓冲区大小，从而导致网络栈需要更多的缓冲区去传输一条消息。在实际上没有减少缓冲数据量的情况下，这可能对吞吐产生不利影响。
-
 #### 多个输入和合并
 
 当前，吞吐计算和缓冲消胀发生在 subtask 层面。
@@ -86,6 +82,14 @@ Flink 1.14 新引入的缓冲消胀机制尝试通过自动调整缓冲数据量
 当前，缓冲消胀仅在使用的缓冲区大小上设置上限。实际的缓冲区大小和个数保持不变。这意味着缓冲消胀机制不会减少作业的内存使用。您应该手动减少缓冲区的大小或者个数。
 
 此外，如果您想减少缓冲数据量使其低于缓冲消胀当前允许的量，您可能需要手动的设置缓冲区的个数。
+
+#### High parallelism
+
+Currently, the buffer debloating mechanism might not perform correctly with high parallelism (above ~200) using the default configuration.
+If you observe reduced throughput or higher than expected checkpointing times
+we suggest increasing the number of floating buffers (`taskmanager.network.memory.floating-buffers-per-gate`) from the default value to at least the number equal to the parallelism.
+
+The actual value of parallelism from which the problem occurs is various from job to job but normally it should be more than a couple of hundreds.
 
 ## 网络缓冲生命周期
  
@@ -114,6 +118,19 @@ Flink 有多个本地缓冲区池 —— 每个输出和输入流对应一个。
 
 不同于输入缓冲区池，这里配置的独占缓冲区和流动缓冲区只被当作推荐值。如果没有足够的缓冲区，每个输出 subpartition 可以只使用一个独占缓冲区而没有流动缓冲区。
 
+#### 透支缓冲区（Overdraft buffers）
+
+另外，每个 subtask 输出数据时可以至多请求 `taskmanager.network.memory.max-overdraft-buffers-per-gate`
+（默认 5）个额外的透支缓冲区（overdraft buffers）。只有当前 subtask 被下游 subtasks 反压且当前 subtask 需要
+请求超过 1 个网络缓冲区（network buffer）才能完成当前的操作时，透支缓冲区才会被使用。可能发生在以下情况：
+- 序列化非常大的 records，不能放到单个网络缓冲区中。
+- 类似 flat map 的算子，即：处理单个 record 时可能会生产多个 records。
+- 周期性地或某些事件触发产生大量 records 的算子（例如：`WindowOperator` 的触发）。
+
+在这些情况下，如果没有透支缓冲区，Flink 的 subtask 线程会被阻塞在反压，从而阻止例如 Unaligned Checkpoint 的完成。
+为了缓解这种情况，增加了透支缓冲区的概念。这些透支缓冲区是可选的，Flink 可以仅仅使用常规的缓冲区逐渐取得进展，也就是
+说 `0` 是 `taskmanager.network.memory.max-overdraft-buffers-per-gate` 可以接受的配置值。
+
 ## 缓冲区的数量
 
 独占缓冲区和流动缓冲区的默认配置应该足以应对最大吞吐。如果想要最小化缓冲数据量，那么可以将独占缓冲区设置为 `0`，同时减小内存段的大小。
@@ -122,7 +139,11 @@ Flink 有多个本地缓冲区池 —— 每个输出和输入流对应一个。
 
 在往下游 subtask 发送数据部分时，缓冲区通过汇集 record 来优化网络开销。下游 subtask 应该在接收到完整的 record 后才开始处理它。
 
-如果缓冲区太小（比如小于一条 record），会因为开销比较大而导致吞吐低。
+If the buffer size is too small, or the buffers are flushed too frequently (`execution.buffer-timeout` configuration parameter), this can lead to decreased throughput
+since the per-buffer overhead are significantly higher then per-record overheads in the Flink's runtime.
+
+As a rule of thumb, we don't recommend thinking about increasing the buffer size, or the buffer timeout unless you can observe a network bottleneck in your real life workload
+(downstream operator idling, upstream backpressured, output buffer queue is full, downstream input queue is empty).
 
 如果缓冲区太大，会导致：
 - 内存使用高
@@ -134,7 +155,7 @@ Flink 有多个本地缓冲区池 —— 每个输出和输入流对应一个。
 
 缓冲区的数量是通过 `taskmanager.network.memory.buffers-per-channel` 和 `taskmanager.network.memory.floating-buffers-per-gate` 来配置的。
 
-为了最好的吞吐率，我们建议使用独占缓冲区和流动缓冲区的默认值。如果缓冲数据量存在问题，更建议打开[缓冲消胀]({{< ref "docs/deployment/memory/network_mem_tuning" >}}#the-buffer-debloating-mechanism)。
+为了最好的吞吐率，我们建议使用独占缓冲区和流动缓冲区的默认值(except you have one of [limit cases]({{< ref "docs/deployment/memory/network_mem_tuning" >}}#limitations))。如果缓冲数据量存在问题，更建议打开[缓冲消胀]({{< ref "docs/deployment/memory/network_mem_tuning" >}}#the-buffer-debloating-mechanism)。
 
 您可以人工地调整网络缓冲区的个数，但是需要注意：
 

@@ -18,6 +18,7 @@
 
 package org.apache.flink.table.test;
 
+import org.apache.flink.annotation.Experimental;
 import org.apache.flink.table.api.TableException;
 import org.apache.flink.table.types.LogicalTypesTest;
 import org.apache.flink.table.types.logical.DecimalType;
@@ -36,7 +37,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.fail;
 import static org.assertj.core.api.Assertions.not;
 
-/** Aseertions for {@link LogicalType}. */
+/** Assertions for {@link LogicalType}. */
+@Experimental
 public class LogicalTypeAssert extends AbstractAssert<LogicalTypeAssert, LogicalType> {
 
     public LogicalTypeAssert(LogicalType logicalType) {
